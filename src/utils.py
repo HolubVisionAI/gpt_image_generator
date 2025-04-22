@@ -3,8 +3,22 @@ import yaml
 import logging
 import colorlog
 
-handler = colorlog.StreamHandler()
-handler.setFormatter(colorlog.ColoredFormatter(
+from settings import SCRIPT_DIR
+
+# Create logs directory if it doesn't exist
+log_path = os.path.join(SCRIPT_DIR, "logs")
+os.makedirs(log_path, exist_ok=True)
+
+# Create formatter for file logs (no color)
+file_formatter = logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(message)s"
+)
+# Create file handler
+file_handler = logging.FileHandler(log_path + "/app.log")
+file_handler.setFormatter(file_formatter)
+
+# Create color formatter for console
+color_formatter = colorlog.ColoredFormatter(
     "%(log_color)s%(asctime)s [%(levelname)s] %(message)s",
     log_colors={
         'DEBUG': 'cyan',
@@ -13,11 +27,17 @@ handler.setFormatter(colorlog.ColoredFormatter(
         'ERROR': 'red',
         'CRITICAL': 'bold_red',
     }
-))
+)
 
+# Create console handler
+console_handler = colorlog.StreamHandler()
+console_handler.setFormatter(color_formatter)
+
+# Setup logger
 log = colorlog.getLogger("colored_logger")
-log.addHandler(handler)
 log.setLevel(logging.DEBUG)
+log.addHandler(console_handler)
+log.addHandler(file_handler)
 
 
 def load_config(config_path="config.yaml"):
@@ -25,8 +45,22 @@ def load_config(config_path="config.yaml"):
         log.warning(f"Config file not found: {config_path}")
         log.info("Creating a blank config.yaml file...")
         default_yaml = """# Example 
-root_paths:
-  - parent path of language directory
+email:
+  - GPT user email
+password:
+  - GPT user password
+chatgpt_url:
+  - https://chatgpt.com/
+image_path:
+  - local test image path
+prompt_text:
+  - test prompt
+download_dir:
+  - generated image is downloaded in this directory
+token:
+  - test_token
+uploaded_dir:
+  - requesting image is saved in this directory
 
 """
         with open(config_path, "w", encoding="utf-8") as f:
