@@ -4,6 +4,7 @@ import random
 import time
 import glob
 import shutil
+import subprocess
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import TimeoutException
@@ -12,7 +13,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from src.utils import log, load_config
 from fake_useragent import UserAgent
-
 
 class GPTImageGenerator:
     def __init__(self, email="", password="", gpt_url="", image_path="", prompt_text="", download_dir=""):
@@ -27,11 +27,17 @@ class GPTImageGenerator:
     def _init_driver(self):
         options = uc.ChromeOptions()
         ua = UserAgent()
-        options.headless = True  # 👈 Headless mode enabled
+        profile_path = "/root/.config/google-chrome/"
+        options.headless = False  # 👈 Headless mode enabled
+        options.add_argument(f"user-data-dir={profile_path}")
         options.add_argument("--disable-save-password-bubble")  # This disables the save password prompt
+        options.add_argument("--remote-debugging-port=9222")  # Optional but helps debugging
         options.add_argument("--disable-infobars")  # Disable infobars that can show up
         options.add_argument(f"--user-agent={ua.random}")
         options.add_argument("--start-maximized")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-blink-features=AutomationControlled")
         prefs = {
             "download.prompt_for_download": False,
@@ -41,11 +47,9 @@ class GPTImageGenerator:
             "credentials_enable_service": False  # Disable storing credentials
         }
         options.add_experimental_option("prefs", prefs)
-        return uc.Chrome(options=options)
+        return uc.Chrome(options=options, version_main=135)
 
     def _log_in(self):
-        log.info("🔐 Logging in to ChatGPT...")
-        self.driver.get(self.gpt_url)
 
         login_btn = self._wait_for_element('button[data-testid="login-button"]')
         if login_btn:
@@ -95,6 +99,14 @@ class GPTImageGenerator:
             file_input.send_keys(os.path.abspath(self.image_path))
             log.info("File uploaded via send_keys")
         time.sleep(3)
+
+        try:
+            result = subprocess.run(['wmctrl', '-c', 'Open Files'], check=True, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE)
+            log.info("Window closed successfully.")
+        except subprocess.CalledProcessError as e:
+            log.info(f"Error occurred: {e.stderr.decode()}")
+
         # prompt_input = self._wait_for_element("id=prompt-textarea")
         # if prompt_input:
         #     prompt_input.send_keys(self.prompt_text)
@@ -109,65 +121,83 @@ class GPTImageGenerator:
             log.info("Can not click submit button")
 
     def _input_prompt(self, text):
-        # js_script = f"""
-        # var el = document.getElementById('prompt-textarea');
-        # if (el) {{
-        #     el.focus();
-        #     el.innerHTML = '<p>{text}</p>';
-        #     var event = new Event('input', {{ bubbles: true }});
-        #     el.dispatchEvent(event);
-        # }}
-        # """
-        # self.driver.execute_script(js_script)
-        # Create an action chain to simulate typing
-        prompt_input = self._wait_for_element("id=prompt-textarea")
-
-        actions = ActionChains(self.driver)
-        actions.move_to_element(prompt_input)
-        actions.click()
-
-        # Simulate typing (this will type one character at a time)
-        actions.send_keys(text)
-        actions.perform()
+        js_script = f"""
+        var el = document.getElementById('prompt-textarea');
+        if (el) {{
+             el.focus();
+             el.innerHTML = '<p>{text}</p>';
+             var event = new Event('input', {{ bubbles: true }});
+             el.dispatchEvent(event);
+        }}
+        """
+        self.driver.execute_script(js_script)
 
         log.info(f"Entered prompt text:{text}")
+        # Create an action chain to simulate typing
+        # prompt_input = self._wait_for_element("id=prompt-textarea")
+
+        # actions = ActionChains(self.driver)
+        # actions.move_to_element(prompt_input)
+        # actions.click()
+
+        # Simulate typing (this will type one character at a time)
+        # actions.send_keys(text)
+        # actions.perform()
 
     def _download_image(self):
         log.info("📥 Downloading generated image...")
-        # created_image_text = self._wait_for_element("//span[text()='Image created']", by=By.XPATH)
-        # if created_image_text:
-        #     log.info("✅ Image ready to download.")
-        img_element = self._wait_for_element(
-            "xpath=//div[contains(@class, 'group') or contains(@class, 'relative')]/img")
-        # img_element = self._wait_for_element("//div[contains(@class, 'group') or contains(@class, 'relative')]/img",
-        #                                      by=By.XPATH)
-
-        if img_element:
-            src = img_element.get_attribute("src")
-            if src:
-                try:
-                    response = requests.get(src)
-                    if response.status_code == 200:
-                        filename = os.path.join(self.download_dir, f"{int(time.time())}_output.png")
-                        with open(filename, 'wb') as f:
-                            f.write(response.content)
-                        log.info(f"✅ Downloaded: {filename}")
-                        return filename
-                    else:
-                        log.warning(f"❌ Failed to download {src} (status {response.status_code})")
-                except Exception as e:
-                    log.info(f"⚠️ Error downloading {src}: {e}")
-            # self._wait_for_download()
-            # list_of_files = glob.glob(f"{self.download_dir}/*")
-            # latest_file = max(list_of_files, key=os.path.getctime)
-            # filename_without_ext = os.path.splitext(os.path.basename(self.image_path))[0]
-            # new_name = os.path.join(self.download_dir, f"{filename_without_ext}_output.png")
-            # shutil.move(latest_file, new_name)
-            # log.info(f"✅ File downloaded and renamed to {new_name}")
-            # return new_name
+        s_time = time.time()
+        created_image_text = self._wait_for_element("//span[text()='Image created']", by=By.XPATH)
+        if created_image_text:
+            log.info("✅ Image ready to download.")
+        e_time = time.time()
+        log.info(f"processing time :{e_time - s_time}, image will be downloaded soon")
+        download_button = self._wait_for_element("//button[@aria-label='Download this image']", by=By.XPATH)
+        if download_button:
+            download_button.click()
+            log.info("Clicked download button")
+            self._wait_for_download()
+            list_of_files = glob.glob(f"{self.download_dir}/*")
+            latest_file = max(list_of_files, key=os.path.getctime)
+            new_name = os.path.join(self.download_dir, f"{int(time.time())}.png")
+            shutil.move(latest_file, new_name)
+            log.info(f"? File downloaded and renamed to {new_name}")
+            return new_name
         else:
-            log.error("❌ Download image element not found or still hidden")
-            return None
+            log.error("? Download button not found.")
+        # time.sleep(10)
+        # img_element = self._wait_for_element(
+        #     "xpath=//div[contains(@class, 'group') or contains(@class, 'relative')]/img")
+        # # img_element = self._wait_for_element("//div[contains(@class, 'group') or contains(@class, 'relative')]/img",
+        # #                                      by=By.XPATH)
+        #
+        # if img_element:
+        #     src = img_element.get_attribute("src")
+        #     log.info(f"img url :{src}")
+        #     if src:
+        #         try:
+        #             response = requests.get(src)
+        #             if response.status_code == 200:
+        #                 filename = os.path.join(self.download_dir, f"{int(time.time())}_output.png")
+        #                 with open(filename, 'wb') as f:
+        #                     f.write(response.content)
+        #                 log.info(f"✅ Downloaded: {filename}")
+        #                 return filename
+        #             else:
+        #                 log.warning(f"❌ Failed to download {src} (status {response.status_code})")
+        #         except Exception as e:
+        #             log.info(f"⚠️ Error downloading {src}: {e}")
+        # self._wait_for_download()
+        # list_of_files = glob.glob(f"{self.download_dir}/*")
+        # latest_file = max(list_of_files, key=os.path.getctime)
+        # filename_without_ext = os.path.splitext(os.path.basename(self.image_path))[0]
+        # new_name = os.path.join(self.download_dir, f"{filename_without_ext}_output.png")
+        # shutil.move(latest_file, new_name)
+        # log.info(f"✅ File downloaded and renamed to {new_name}")
+        # return new_name
+        # else:
+        #     log.error("❌ Download image element not found or still hidden")
+        #     return None
 
     def _wait_for_download(self, timeout=30):
         start_time = time.time()
@@ -180,7 +210,9 @@ class GPTImageGenerator:
 
     def run(self):
         try:
-            self._log_in()
+            log.info("🔐 Browser Open...")
+            self.driver.get(self.gpt_url)
+            #            self._log_in()
             self._upload_image_and_generate()
             downloaded_image_path = self._download_image()
             log.info("✅ Process complete.")
@@ -204,13 +236,13 @@ class GPTImageGenerator:
                 selector = selector.replace("xpath=", "")
                 by = By.XPATH
 
-            time.sleep(random.uniform(1.0, 2.5))
+            time.sleep(random.uniform(1, 2))
             wait = WebDriverWait(self.driver, timeout)
             element = wait.until(
                 EC.visibility_of_element_located((by, selector)) if visible_only else EC.presence_of_element_located(
                     (by, selector))
             )
-            time.sleep(random.uniform(0.5, 1.0))
+            time.sleep(random.uniform(2, 4))
 
             return element
         except TimeoutException:
@@ -238,3 +270,4 @@ if __name__ == "__main__":
         prompt_text=prompt_text
     )
     crawler.run()
+

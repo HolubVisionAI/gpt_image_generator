@@ -13,16 +13,18 @@ if __name__ == '__main__':
     image_path = config.get("image_path", [""])[0]
     download_dir = config.get("download_dir", ["downloads"])[0]
     prompt_text = config.get("prompt_text", [""])[0]
-    # download_dir = os.path.join(download_dir, str(int(time.time())))
+    download_dir = os.path.join(download_dir, str(int(time.time())))
 
     os.makedirs(download_dir, exist_ok=True)
-
-    crawler = GPTImageGenerator(
-        email=email,
-        password=pwd,
-        gpt_url=url,
-        image_path=image_path,
-        download_dir=download_dir,
-        prompt_text=prompt_text
-    )
-    crawler.run()
+    try:	
+	    crawler = GPTImageGenerator(
+		email=email,
+		password=pwd,
+		gpt_url=url,
+		image_path=image_path,
+		download_dir=download_dir,
+		prompt_text=prompt_text
+	    )
+	    crawler.run()
+    except Exception as e:
+	    print(e)
